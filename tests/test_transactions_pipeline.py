@@ -1,6 +1,113 @@
-from src.transactions_pipeline import parse_rows, format_output, SchemaError
+from src.transactions_pipeline import (
+    TransformTransactions,
+    parse_rows,
+    format_output,
+    SchemaError,
+)
 import datetime
 import pytest
+import apache_beam as beam
+from apache_beam.testing.util import assert_that, equal_to
+
+############################################################
+# Unit tests for composite transform TransformTransactions #
+############################################################
+
+
+@pytest.mark.parametrize(
+    "input_strings, output_strings",
+    [
+        (  # Test Case: single row, date and amount just in threshold
+            ["2010-01-01 00:00:00 UTC,test_wallet_1,test_wallet_2,20.01"],
+            ['{"date": "2010-01-01", "total_amount": "20.01"}'],
+        ),
+        (  # Test Case: no row within date threshold, just under
+            ["2009-12-31 23:59:59 UTC,test_wallet_1,test_wallet_2,20.01"],
+            [],
+        ),
+        (  # Test Case: no row within transaction amount threshold, just under
+            ["2010-01-01 00:00:00 UTC,test_wallet_1,test_wallet_2,20.00"],
+            [],
+        ),
+        (  # Test Case: negative transaction amount filtered out
+            ["2010-01-01 00:00:00 UTC,test_wallet_1,test_wallet_2,-25"],
+            [],
+        ),
+        (  # Test Case: no filtered transactions with the same date
+            [
+                "2009-12-31 23:59:59 UTC,test_wallet_1,test_wallet_2,20.00",
+                "2009-12-31 23:59:59 UTC,test_wallet_1,test_wallet_2,2.00",
+                "2011-02-12 10:30:45 UTC,test_wallet_1,test_wallet_2,2.00",
+                "2011-02-12 10:30:45 UTC,test_wallet_1,test_wallet_2,21.30",
+                "1999-02-12 10:30:45 UTC,test_wallet_1,test_wallet_2,21.30",
+                "2020-01-29 17:30:45 UTC,test_wallet_1,test_wallet_2,100.99",
+            ],
+            [
+                '{"date": "2011-02-12", "total_amount": "21.30"}',
+                '{"date": "2020-01-29", "total_amount": "100.99"}',
+            ],
+        ),
+        (  # Test Case: 2 filtered transactions with the same date
+            [
+                "2009-12-31 23:59:59 UTC,test_wallet_1,test_wallet_2,2.00",
+                "2011-02-12 10:30:45 UTC,test_wallet_1,test_wallet_2,2.00",
+                "2011-02-12 10:30:45 UTC,test_wallet_1,test_wallet_2,21.30",
+                "1999-02-12 10:30:45 UTC,test_wallet_1,test_wallet_2,21.30",
+                "2020-01-29 17:30:45 UTC,test_wallet_1,test_wallet_2,100.99",
+                "2020-01-29 00:30:50 UTC,test_wallet_x,test_wallet_y,20.50",
+                "2021-01-29 00:30:50 UTC,test_wallet_1,test_wallet_2,10000.00",
+            ],
+            [
+                '{"date": "2011-02-12", "total_amount": "21.30"}',
+                '{"date": "2020-01-29", "total_amount": "121.49"}',
+                '{"date": "2021-01-29", "total_amount": "10000.00"}',
+            ],
+        ),
+        (  # Test Case: multiple filtered transactions with the same dates
+            [
+                "2021-01-29 17:30:50 UTC,test_wallet_1,test_wallet_2,25",
+                "2009-12-31 23:59:59 UTC,test_wallet_1,test_wallet_2,2.00",
+                "2011-02-12 10:30:45 UTC,test_wallet_1,test_wallet_2,2.00",
+                "2021-01-29 00:30:50 UTC,test_wallet_1,test_wallet_2,50.01",
+                "2011-02-12 10:30:45 UTC,test_wallet_1,test_wallet_2,21.30",
+                "1999-02-12 10:30:45 UTC,test_wallet_1,test_wallet_2,21.30",
+                "2020-01-29 17:30:45 UTC,test_wallet_1,test_wallet_2,100.99",
+                "2020-01-29 00:30:50 UTC,test_wallet_x,test_wallet_y,20.50",
+                "2021-01-29 00:30:50 UTC,test_wallet_1,test_wallet_2,10000.00",
+            ],
+            [
+                '{"date": "2011-02-12", "total_amount": "21.30"}',
+                '{"date": "2020-01-29", "total_amount": "121.49"}',
+                '{"date": "2021-01-29", "total_amount": "10075.01"}',
+            ],
+        ),
+        (  # Test Case: transaction amounts to varying decimal places
+            [
+                "2021-01-29 17:30:50 UTC,test_wallet_1,test_wallet_2,25.1",
+                "2020-01-29 17:30:45 UTC,test_wallet_1,test_wallet_2,100.00010",
+            ],
+            [
+                '{"date": "2021-01-29", "total_amount": "25.10"}',
+                '{"date": "2020-01-29", "total_amount": "100.00"}',
+            ],
+        ),
+    ],
+)
+def test_transform_transactions(input_strings, output_strings):
+    """
+    Tests that TransformTransactions correctly processes the input CSV strings.
+    Including:
+        Filtering or dates and transaction amounts
+        Grouping and aggregating transaction amounts by date
+    """
+    with beam.Pipeline() as p:
+        result = p | beam.Create(input_strings) | TransformTransactions()
+        assert_that(result, equal_to(output_strings))
+
+
+#############################################
+# Unit tests for CSV row parser: parse_rows #
+#############################################
 
 
 class TestParseRows:
@@ -85,6 +192,11 @@ class TestParseRows:
             ),
         ):
             parse_rows(row)
+
+
+#######################################################
+# Unit tests for output JSON formatter: format_output #
+#######################################################
 
 
 @pytest.mark.parametrize(
