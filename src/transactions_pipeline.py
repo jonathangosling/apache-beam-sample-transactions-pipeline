@@ -53,32 +53,6 @@ def format_output(row: dict) -> str:
     return json.dumps(row)
 
 
-class TransformTransactions(beam.PTransform):
-    """
-    PTransform subclass created for perfoming all required transformation on the transactions CSV dataset.
-    Accepts a PCollection of strings containing the rows of a CSV ("<timestamp>,<origin>,<destination>,<transaction_amount>").
-    Outputs a Pcollection of strings containing the tranformed rows as JSON ("date": "<value>", "total_amount": "<value>").
-    """
-
-    def expand(self, pcoll):
-        return (
-            pcoll
-            | "Parse rows" >> beam.Map(parse_rows)
-            | "Filter Transaction Amount"
-            >> beam.Filter(lambda row: row["transaction_amount"] > 20)
-            | "Filter Transaction Date"
-            >> beam.Filter(lambda row: row["timestamp"].year >= 2010)
-            | "Extract Date-Transaction key value pairs"
-            >> beam.Map(
-                lambda x: (x["timestamp"].strftime("%Y-%m-%d"), x["transaction_amount"])
-            )
-            | "Group by timestamp" >> beam.CombinePerKey(sum)
-            | "Relabel"
-            >> beam.Map(lambda row: {"date": row[0], "total_amount": row[1]})
-            | "Format output" >> beam.Map(format_output)
-        )
-
-
 def transactions_pipleline(csv_file_path: str):
     """
     Executes an Apache Beam Pipeline to process the CSV file at `csv_file_path`.
@@ -102,11 +76,20 @@ def transactions_pipleline(csv_file_path: str):
         (
             pipeline
             | "Read transactions"
-            >> beam.io.ReadFromText(
-                "gs://cloud-samples-data/bigquery/sample-transactions/transactions.csv",
-                skip_header_lines=True,
+            >> beam.io.ReadFromText(csv_file_path, skip_header_lines=True)
+            | "Parse rows" >> beam.Map(parse_rows)
+            | "Filter Transaction Amount"
+            >> beam.Filter(lambda row: row["transaction_amount"] > 20)
+            | "Filter Transaction Date"
+            >> beam.Filter(lambda row: row["timestamp"].year >= 2010)
+            | "Extract Date-Transaction key value pairs"
+            >> beam.Map(
+                lambda x: (x["timestamp"].strftime("%Y-%m-%d"), x["transaction_amount"])
             )
-            | "Transform" >> TransformTransactions()
+            | "Group by timestamp" >> beam.CombinePerKey(sum)
+            | "Relabel"
+            >> beam.Map(lambda row: {"date": row[0], "total_amount": row[1]})
+            | "Format output" >> beam.Map(format_output)
             | "WriteTransactions"
             >> beam.io.WriteToText(
                 "output/results.jsonl.gz", num_shards=1, shard_name_template=""
