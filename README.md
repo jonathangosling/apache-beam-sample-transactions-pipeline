@@ -1,6 +1,6 @@
 # apache-beam-sample-transactions-pipeline
 
-This repo contains a simple Apache Beam pipeline used to ingest and process a sample transactions dataset: "gs://cloud-samples-data/bigquery/sample-transactions/transactions.csv" by default.
+This repo contains a simple Apache Beam pipeline used to ingest and process a sample transactions dataset, "gs://cloud-samples-data/bigquery/sample-transactions/transactions.csv" by default.
 
 Transformations include:
 - Filtering for all transactions have a `transaction_amount` greater than `20`
@@ -39,11 +39,7 @@ The diagram below shows a schematic of the Pipeline steps.
 
     Beam reads the row into separate PCollections for parallel execution. Whilst we implement error handling of column types and date format, the schema is assumed rather than determined by the headers and/or validated. Suggestion could be to read in the headers separately and validate the schema before running the main data pipeline.
 
-    Note: Beam allows for schemas to be defined on PCollections too. The documentation has some information about creating a schema for a PCollection [here](https://beam.apache.org/documentation/programming-guide/#creating-schemas).
-
-2. Improvement: Allow parametrised filtering using side inputs - https://beam.apache.org/documentation/programming-guide/#side-inputs
-
-3. Consideration: Combining filters into one
+2. Consideration: Combining filters into one
 
     As can be seen from the diagram above, there are some consecutive `Map` and `Filter` operations, which could perhaps be combined.
 
@@ -89,7 +85,7 @@ We use these same subclasses in our pipeline, additional optional parameters are
 
 Note: by default the output file(s) will be suffixed with the shard number as '-SSSSS-of-NNNNN' (the default `shard_name_template`) where S is the shard number repsonsible for that particular file and N is the total number of shards. Since the ask was to output as `output/results.jsonl.gz`, we have explicitly set the `num_shards` to 1 and the `shard_name_template` to an empty string.
 
-Briefly considered using `ReadFromCsv`. The rows were `BeamSchema_...` type objects, the docs on beam schemas [here](https://beam.apache.org/documentation/programming-guide/#schemas) may help. Also requires an additional dependency on pandas. Noted as a potential improvement for helping to solve our schema assumption issue.
+Briefly considered using `ReadFromCsv`. The rows were BeamSchema_... type objects - couldn't find much about this. Also requires an additional dependency on pandas. Could be worth investigating further as a possible option for helping to solve our schema assumption issue.
 
 ### Transforms
 
