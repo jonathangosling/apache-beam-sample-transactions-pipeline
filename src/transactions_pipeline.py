@@ -93,7 +93,7 @@ def transactions_pipleline(csv_file_path: str):
     - Col 0: timestamp: datetime string of format YYYY-MM-DD HH:MM:SS UTC
     - Col 1: origin: string
     - Col 2: destination: string
-    - Col 4: transaction_amount: numeric string
+    - Col 3: transaction_amount: numeric string
 
     The output JSON includes keys "date" and "total_amount".
     """
@@ -103,7 +103,7 @@ def transactions_pipleline(csv_file_path: str):
             pipeline
             | "Read transactions"
             >> beam.io.ReadFromText(
-                "gs://cloud-samples-data/bigquery/sample-transactions/transactions.csv",
+                csv_file_path,
                 skip_header_lines=True,
             )
             | "Transform" >> TransformTransactions()
