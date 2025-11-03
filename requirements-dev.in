@@ -1,0 +1,4 @@
+apache-beam
+apache-beam[gcp]
+pytest
+pre-commit
